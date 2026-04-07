@@ -25,7 +25,7 @@ if os.path.exists(_env_path):
 # ==================== 配置 ====================
 
 DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-DASHSCOPE_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+DASHSCOPE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
 WORKING_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -52,7 +52,7 @@ def load_scoring_logic(path: str) -> dict:
 
 # ==================== 2. API 调用 ====================
 
-def call_qwen_api(prompt: str, model: str = "qwen3.6-plus") -> str:
+def call_qwen_api(prompt: str, model: str = "qwen-plus") -> str:
     """调用 DashScope API 获取评分"""
     headers = {
         "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
@@ -60,12 +60,22 @@ def call_qwen_api(prompt: str, model: str = "qwen3.6-plus") -> str:
     }
     payload = {
         "model": model,
-        "input": {"prompt": prompt},
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
         "parameters": {"temperature": 0.1, "max_tokens": 50}
     }
     response = requests.post(DASHSCOPE_URL, json=payload, headers=headers, timeout=30)
     response.raise_for_status()
-    return response.json()["output"]["text"].strip()
+    resp_data = response.json()
+    # 支持两种响应格式
+    if "output" in resp_data and "text" in resp_data["output"]:
+        return resp_data["output"]["text"].strip()
+    elif "output" in resp_data and "choices" in resp_data["output"]:
+        return resp_data["output"]["choices"][0]["message"]["content"].strip()
+    elif "choices" in resp_data:
+        return resp_data["choices"][0]["message"]["content"].strip()
+    return str(resp_data)
 
 
 # ==================== 3. 分数解析 ====================
@@ -142,12 +152,13 @@ def compute_kendall_tau(pred_ranking: List[str], true_ranking: List[str]) -> flo
     if not pairs:
         return 1.0
 
-    concordant = sum(
-        (pred_ranks[a] - pred_ranks[b]) * (true_ranks[a] - true_ranks[b]) > 0
+    concordant_count = sum(
+        1
         for a, b in pairs
+        if (pred_ranks[a] - pred_ranks[b]) * (true_ranks[a] - true_ranks[b]) > 0
     )
 
-    return len(concordant) / len(pairs)
+    return concordant_count / len(pairs)
 
 
 # ==================== 6. 成对准确率 ====================
@@ -378,8 +389,13 @@ deviation 报告：
                 if dim["name"] == dim_name:
                     if mod_type == "weight":
                         old_weight = dim["weight"]
-                        dim["weight"] = float(new_value)
-                        changed_fields.append(f"{dim_name} weight: {old_weight}->{new_value}")
+                        new_weight = float(new_value)
+                        # 过滤无效权重：非负数
+                        if new_weight < 0:
+                            print(f"  [Agent] 跳过无效权重 {dim_name}: {new_weight} < 0")
+                            continue
+                        dim["weight"] = new_weight
+                        changed_fields.append(f"{dim_name} weight: {old_weight:.2f}->{new_weight:.2f}")
                     elif mod_type == "prompt":
                         dim["prompt"] = new_value
                         changed_fields.append(f"{dim_name} prompt updated")
@@ -387,10 +403,13 @@ deviation 报告：
                         dim["rubric"] = new_value
                         changed_fields.append(f"{dim_name} rubric updated")
 
-        # 重新计算权重确保总和为 1.0
+        # 重新计算权重确保总和为 1.0，并过滤负权重
+        for d in dimensions:
+            if d["weight"] < 0:
+                d["weight"] = 0.0
         total_weight = sum(d["weight"] for d in dimensions)
-        if abs(total_weight - 1.0) > 0.001:
-            print(f"  [Agent] 权重归一化: {total_weight} -> 1.0")
+        if total_weight > 0 and abs(total_weight - 1.0) > 0.001:
+            print(f"  [Agent] 权重归一化: sum={total_weight:.4f} -> 1.0")
             for d in dimensions:
                 d["weight"] = d["weight"] / total_weight
 
@@ -531,14 +550,18 @@ def main_loop(max_iterations: int = 100) -> None:
         # 打印偏差报告
         print(generate_deviation_report(iteration, tau, tau_delta, dim_stats))
 
-        # Git 操作
-        commit_hash = git_commit_if_improved(tau, tau_prev, iteration, changed_fields=[])
+        # 生成偏差报告并让 Agent 修改
+        deviation_report = generate_deviation_report(iteration, tau, tau_delta, dim_stats)
+        changed_fields = agent_modify_scoring_logic(deviation_report, iteration)
+
+        # Git 操作（commit 当前状态，即产生 tau 的那个 scoring_logic）
+        commit_hash = git_commit_if_improved(tau, tau_prev, iteration, changed_fields)
 
         # 记录迭代
-        log_iteration(iteration, tau, tau_delta, dim_stats, [], commit_hash or "")
+        log_iteration(iteration, tau, tau_delta, dim_stats, changed_fields, commit_hash or "")
 
         # 保存最佳模型
-        if commit_hash and tau > tau_prev:
+        if commit_hash:
             save_best_model("best_scoring_model.py", dims, tau, iteration)
 
         tau_prev = tau
