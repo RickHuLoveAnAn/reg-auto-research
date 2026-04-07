@@ -357,21 +357,34 @@ def agent_modify_scoring_logic(deviation_report: str, iteration: int) -> List[st
 deviation 报告：
 {deviation_report}
 
-请以 JSON 格式输出修改计划：
-{{"modifications": [{{"type": "weight|prompt|rubric|add|remove", "dimension": "维度名", "old_value": ..., "new_value": ..., "reason": "..."}}]}}
+请直接输出以下格式的 JSON，不要输出任何其他内容：
+{{"modifications": [{{"type": "weight|prompt|rubric", "dimension": "维度名", "old_value": 0.3, "new_value": 0.35, "reason": "原因"}}]}}
 
-注意：权重总和必须保持为 1.0。每次最多修改 2 个维度。"""
+注意：
+- 权重总和必须保持为 1.0，非负数
+- 每次最多修改 2 个维度
+- 只输出 JSON，不要解释"""
 
     try:
         response = call_qwen_api(system_prompt)
 
         # 解析 JSON 响应
-        json_match = re.search(r'\{.*"modifications".*\}', response, re.DOTALL)
-        if not json_match:
-            print(f"  [Agent] 无法解析修改计划，使用默认计划")
+        json_str = None
+        # 尝试从 ```json ``` 块中提取
+        code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+        if code_block_match:
+            json_str = code_block_match.group(1)
+        else:
+            # 尝试直接匹配 JSON 对象
+            json_match = re.search(r'\{.*"modifications".*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+
+        if not json_str:
+            print(f"  [Agent] 无法从响应中提取 JSON: {response[:100]}...")
             return []
 
-        modifications = json.loads(json_match.group())
+        modifications = json.loads(json_str)
 
         if "modifications" not in modifications or not modifications["modifications"]:
             print(f"  [Agent] 无需修改")
