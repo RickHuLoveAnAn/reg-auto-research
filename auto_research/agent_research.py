@@ -77,7 +77,7 @@ def call_qwen_api(prompt: str, model: str = "qwen-plus") -> str:
         "messages": [
             {"role": "user", "content": prompt}
         ],
-        "parameters": {"temperature": 0.1, "max_tokens": 50}
+        "parameters": {"temperature": 0, "max_tokens": 50}
     }
     response = requests.post(DASHSCOPE_URL, json=payload, headers=headers, timeout=30)
     response.raise_for_status()
