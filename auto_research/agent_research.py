@@ -38,13 +38,27 @@ def load_golden_set(path: str) -> dict:
         return json.load(f)
 
 
+def _sanitize_dimensions(dimensions: list) -> list:
+    """把 dimension 里的 prompt/rubric 中的真实换行替换为 \\n"""
+    import re
+    fixed = []
+    for dim in dimensions:
+        d = dict(dim)
+        for key in ("prompt", "rubric"):
+            if key in d and isinstance(d[key], str):
+                # 把真实换行符替换为转义序列
+                d[key] = d[key].replace("\n", "\\n")
+        fixed.append(d)
+    return fixed
+
+
 def load_scoring_logic(path: str) -> dict:
     """动态加载 scoring_logic.py 作为 Python 模块"""
     spec = importlib.util.spec_from_file_location("scoring_logic_module", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return {
-        "dimensions": module.dimensions,
+        "dimensions": _sanitize_dimensions(module.dimensions),
         "aggregation": getattr(module, "aggregation", "weighted_sum"),
         "build_score_prompt": module.build_score_prompt
     }
@@ -458,8 +472,8 @@ def _write_scoring_logic(path: str, scoring_info: dict) -> None:
         lines.append("    {")
         lines.append(f'        "name": "{dim["name"]}",')
         lines.append(f'        "weight": {dim["weight"]},')
-        lines.append(f'        "prompt": "{dim["prompt"]}",')
-        lines.append(f'        "rubric": "{dim["rubric"]}"')
+        # Use repr() to safely escape newlines and quotes
+        lines.append(f"        \"prompt\": {repr(dim['prompt'])},\n        \"rubric\": {repr(dim['rubric'])}")
         lines.append("    },")
 
     lines.append("]")
