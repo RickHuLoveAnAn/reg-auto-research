@@ -84,13 +84,14 @@ def parse_score(raw_text: str) -> float:
     """从模型响应中提取第一个 0-10 的数字分数"""
     if not raw_text:
         return 5.0
-    # 匹配第一个非负浮点数
-    match = re.search(r"(\d+\.?\d*)", raw_text.strip())
+    # 匹配第一个数字（支持负数）
+    match = re.search(r"-?\d+\.?\d*", raw_text.strip())
     if match:
-        score = float(match.group(1))
-        # 如果分数超出范围，进行缩放
-        if score > 10:
-            score = score / 10  # 假设可能是 0-100 的分数
+        score = float(match.group())
+        # 如果分数 > 100，缩放到 0-10（如 150 → 15 → 仍超范围则再 clamp）
+        if score > 100:
+            score = score / 10
+        # 分数超出 0-10 范围则截断
         return min(max(score, 0.0), 10.0)
     return 5.0  # 默认分数
 
@@ -157,8 +158,10 @@ def compute_kendall_tau(pred_ranking: List[str], true_ranking: List[str]) -> flo
         for a, b in pairs
         if (pred_ranks[a] - pred_ranks[b]) * (true_ranks[a] - true_ranks[b]) > 0
     )
+    discordant_count = len(pairs) - concordant_count
 
-    return concordant_count / len(pairs)
+    # tau = (C - D) / (C + D) = (C - D) / len(pairs)
+    return (concordant_count - discordant_count) / len(pairs)
 
 
 # ==================== 6. 成对准确率 ====================
@@ -301,11 +304,11 @@ def git_commit_if_improved(
     """如果 tau 提升则 commit scoring_logic.py，否则 checkout"""
     scoring_path = os.path.join(WORKING_DIR, "scoring_logic.py")
 
-    if tau > tau_prev and changed_fields:
+    if tau > tau_prev:
         # Commit
         try:
             subprocess.run(["git", "add", "scoring_logic.py"], cwd=WORKING_DIR, check=True)
-            commit_msg = f"Iteration {iteration}: tau {tau_prev:.4f} -> {tau:.4f}. Changes: {', '.join(changed_fields)}"
+            commit_msg = f"Iteration {iteration}: tau {tau_prev:.4f} -> {tau:.4f}. Changes: {', '.join(changed_fields) if changed_fields else '(auto-adjust)'}"
             result = subprocess.run(
                 ["git", "commit", "-m", commit_msg],
                 cwd=WORKING_DIR,
@@ -578,14 +581,6 @@ def main_loop(max_iterations: int = 100) -> None:
             save_best_model("best_scoring_model.py", dims, tau, iteration)
 
         tau_prev = tau
-
-        # 生成偏差报告并让 Agent 修改
-        deviation_report = generate_deviation_report(iteration, tau, tau_delta, dim_stats)
-        changed_fields = agent_modify_scoring_logic(deviation_report, iteration)
-
-        # 如果没有改进，等待下一次迭代
-        if not changed_fields:
-            print(f"  [Loop] 无需修改，进入下一迭代")
 
     print("\n" + "=" * 60)
     print("主循环完成")
