@@ -472,8 +472,9 @@ def _write_scoring_logic(path: str, scoring_info: dict) -> None:
         lines.append("    {")
         lines.append(f'        "name": "{dim["name"]}",')
         lines.append(f'        "weight": {dim["weight"]},')
-        # Use repr() to safely escape newlines and quotes
-        lines.append(f"        \"prompt\": {repr(dim['prompt'])},\n        \"rubric\": {repr(dim['rubric'])}")
+        # repr() escapes newlines (\n -> \\n) and quotes, safe for Python string literals
+        lines.append(f'        "prompt": {repr(dim["prompt"])},')
+        lines.append(f'        "rubric": {repr(dim["rubric"])}')
         lines.append("    },")
 
     lines.append("]")
