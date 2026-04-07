@@ -211,7 +211,7 @@ def test_scoring_logic_loads():
     )
     assert "dimensions" in dims
     assert "build_score_prompt" in dims
-    assert len(dims["dimensions"]) == 3
+    assert len(dims["dimensions"]) == 5
     # 验证权重总和为 1.0
     total = sum(d["weight"] for d in dims["dimensions"])
     assert abs(total - 1.0) < 0.001
