@@ -227,7 +227,8 @@ def test_build_score_prompt():
     dim = dims["dimensions"][0]
     prompt = dims["build_score_prompt"]("这是文章内容。", dim)
     assert "这是文章内容。" in prompt
-    assert dim["prompt"] in prompt
+    # prompt 模板中的 {regulation_name} 等参数已被替换，检查关键内容片段
+    assert "合规实操" in prompt or "合规专家" in prompt
     assert dim["rubric"] in prompt
 
 
