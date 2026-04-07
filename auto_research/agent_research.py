@@ -98,7 +98,7 @@ def parse_score(raw_text: str) -> float:
 
 # ==================== 4. 文章评分 ====================
 
-def score_article(article_text: str, scoring_info: dict) -> dict:
+def score_article(article_text: str, scoring_info: dict, regulation_name: str = "某金融监管规定") -> dict:
     """对单篇文章进行多维度评分"""
     dimensions = scoring_info["dimensions"]
     build_score_prompt = scoring_info["build_score_prompt"]
@@ -106,7 +106,8 @@ def score_article(article_text: str, scoring_info: dict) -> dict:
     dimension_scores = {}
 
     for dim in dimensions:
-        prompt = build_score_prompt(article_text, dim)
+        dim_with_meta = {**dim, "regulation_name": regulation_name}
+        prompt = build_score_prompt(article_text, dim_with_meta)
         try:
             raw_response = call_qwen_api(prompt)
             score = parse_score(raw_response)
@@ -542,7 +543,7 @@ def main_loop(max_iterations: int = 100) -> None:
             log_iteration._current_iteration = iteration
             log_iteration._current_article_id = aid
 
-            article_scores = score_article(article["content"], dims)
+            article_scores = score_article(article["content"], dims, regulation_name=golden.get("regulation", "某金融监管规定"))
             scores[aid] = article_scores
 
         # 计算排名
