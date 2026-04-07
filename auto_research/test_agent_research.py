@@ -211,7 +211,7 @@ def test_scoring_logic_loads():
     )
     assert "dimensions" in dims
     assert "build_score_prompt" in dims
-    assert len(dims["dimensions"]) == 5
+    assert len(dims["dimensions"]) == 3
     # 验证权重总和为 1.0
     total = sum(d["weight"] for d in dims["dimensions"])
     assert abs(total - 1.0) < 0.001
@@ -263,6 +263,17 @@ def test_weight_sum_always_one():
 
 
 # ==================== 10. test_no_double_agent_call ====================
+
+def test_scoring_logic_syntax_valid():
+    """验证 scoring_logic.py 可以被 Python 语法解析（无语法错误）"""
+    import ast
+    with open(os.path.join(os.path.dirname(__file__), "scoring_logic.py"), "r") as f:
+        content = f.read()
+    try:
+        ast.parse(content)
+    except SyntaxError as e:
+        pytest.fail(f"scoring_logic.py 有语法错误: {e}")
+
 
 def test_no_double_agent_call_in_main_loop():
     """验证主循环代码中没有重复调用 agent_modify_scoring_logic"""
