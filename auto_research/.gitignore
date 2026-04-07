@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+evolution_log.jsonl
+api_calls.log
+best_scoring_model.py
